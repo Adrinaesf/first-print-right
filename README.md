@@ -1,0 +1,58 @@
+# First-Print-Right — runnable source
+
+A faithful local copy of https://first-print-right.onrender.com/, retrieved November 13, 2026. The actual publicly served HTML, CSS, and JavaScript are preserved under `original/`. `public/` is the runnable copy, with the same Three.js version served locally rather than from a CDN. The private server's source is not exposed by the website; `server.mjs` is a newly written replacement for its two API routes.
+
+## Acknowledgments
+
+I really thank my teammates, **Sobhan Ranjbar**, **Aida Rezaei**, and **Sara Mohseni**, for their contributions and teamwork on this project.
+
+## Run
+
+Install Node.js 22.9 or later, then open a terminal in this folder:
+
+```sh
+npm start
+```
+
+Open http://127.0.0.1:3000. No npm dependency installation is needed: the required Three.js 0.160.0 modules are included with their MIT license under `public/vendor/three/`. Google Fonts loads Inter and Archivo online, with system fonts as fallback.
+
+## Optional AI explanation
+
+Copy `.env.example` to `.env`, set your own `OPENAI_API_KEY`, and restart. The key stays on the server. Without a key, mesh analysis, estimates, orientation comparison, and STL downloads still work; the explanation is generated locally. The replacement server sends numeric analysis, risk, fit, and rotation information to OpenAI, excluding the filename and STL mesh. Do not put credentials in `public/` or commit `.env`.
+
+The original site's AI model, credentials, prompts, and private backend implementation cannot be recovered from its URL. The replacement defaults to `gpt-4.1-mini`; configure a model available to your account. Set `OPENAI_REASONING_EFFORT` only if your selected model supports it.
+
+## Included behavior
+
+- STL file selection and drag/drop, with the original 100 MB limit.
+- Built-in stove knob sample.
+- Client-side geometry analysis and orientation search.
+- Interactive 3D viewer, camera presets, original/optimized comparison, and overhang highlighting.
+- Before/after material, time, energy, risk, contact, and overhang estimates.
+- Rotation approval, slicer suggestions, and binary STL export.
+
+These are the original project's heuristic estimates, not slicer simulation or print guarantees. The sample is made from overlapping cylinder meshes, as on the original.
+
+## Download behavior
+
+Select **Confirm & download**, or **Download again** after approval. The output is `<filename>_optimized.stl`, typically saved to your browser's Downloads folder. The original site shows its success screen immediately after initiating the download; this does not prove the browser saved it. In Codex's browser, a download may save without displaying a prompt. Check Downloads or use a regular browser if its download settings block the save.
+
+## Verify
+
+```sh
+npm test
+```
+
+The server tests cover static assets, API status, validation, and the optional AI integration using a mocked upstream service. Live AI requires your own key and is not tested by default.
+
+## Files
+
+- `public/index.html`: page structure and original copy.
+- `public/style.css`: original styling, responsive rules, and logo animation.
+- `public/app.js`: original viewer, analysis, UI workflow, and STL export.
+- `public/vendor/three/`: pinned local rendering dependency and license.
+- `server.mjs`: replacement static server and optional AI endpoints.
+- `test/server.test.mjs`: automated backend checks.
+- `original/`: unmodified public frontend, for comparison and provenance.
+
+The retrieved application files had no license header or license information. Their inclusion here does not establish ownership or grant additional reuse rights. Three.js retains its bundled MIT license.

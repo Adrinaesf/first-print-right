@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>First-Print-Right</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "/vendor/three/build/three.module.js",
+      "three/addons/": "/vendor/three/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <svg viewBox="0 0 24 24" class="brand-mark" aria-hidden="true"><path d="M12 2 3 7v10l9 5 9-5V7z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="m3 7 9 5 9-5M12 12v10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
+      <span>First-Print-Right</span>
+    </div>
+    <ol class="stepper" id="stepper">
+      <li data-step="1" class="active"><span>1</span>Upload</li>
+      <li data-step="2"><span>2</span>Review</li>
+      <li data-step="3"><span>3</span>Download</li>
+    </ol>
+    <div class="ai-pill" id="aiPill" title="AI status"><i></i><span>Checking AI…</span></div>
+  </header>
+
+  <!-- STEP 1: UPLOAD -->
+  <main id="uploadView" class="upload-view">
+    <div class="upload-card">
+      <div class="hero" id="hero">
+        <h2 class="logo" aria-label="Sims">
+          <span class="l" style="--i:0;--c:#17c964"><span class="ink">S</span></span><span class="l" style="--i:1;--c:#4ade80"><span class="ink">i</span></span><span class="l" style="--i:2;--c:#10b981"><span class="ink">m</span></span><span class="l" style="--i:3;--c:#86efac"><span class="ink">s</span></span>
+        </h2>
+        <p class="hero-sub"><span class="hack">UNHack 2026</span><span class="dot"></span>Team Sims<span class="dot"></span>Climate-Ready Communities</p>
+      </div>
+      <h1>Check a part before you print it</h1>
+      <p class="lead">Upload an STL. We find the orientation that needs the least support, show you the result in 3D, and you approve it before download.</p>
+      <label class="dropzone" id="dropzone">
+        <input type="file" id="fileInput" accept=".stl" hidden>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0-4.5 4.5M12 4l4.5 4.5M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <strong>Drop an STL file here</strong>
+        <span>or <u>browse your computer</u> · up to 100 MB</span>
+      </label>
+      <div class="upload-foot">
+        <button class="btn ghost" id="sampleBtn" type="button">Try a sample part</button>
+        <span class="muted">Your file stays in your browser. Only the numbers are sent to the AI.</span>
+      </div>
+      <p class="error" id="uploadError" hidden></p>
+    </div>
+  </main>
+
+  <!-- STEP 2-3: WORKSPACE -->
+  <main id="workspace" class="workspace" hidden>
+    <nav class="toolbar" aria-label="View tools">
+      <button class="tool" id="toolOpen" title="Open another file"><svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></button>
+      <span class="tool-sep"></span>
+      <button class="tool" data-view="iso" title="3D view"><svg viewBox="0 0 24 24"><path d="M12 3 4 7.5v9L12 21l8-4.5v-9z"/><path d="m4 7.5 8 4.5 8-4.5M12 12v9"/></svg></button>
+      <button class="tool" data-view="front" title="Front view"><svg viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="1"/><path d="M5 15h14"/></svg></button>
+      <button class="tool" data-view="top" title="Top view"><svg viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="1"/><circle cx="12" cy="12" r="2.5"/></svg></button>
+      <button class="tool" data-view="side" title="Side view"><svg viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="1"/><path d="M9 5v14"/></svg></button>
+      <button class="tool" id="toolFit" title="Fit to view"><svg viewBox="0 0 24 24"><path d="M4 9V5a1 1 0 0 1 1-1h4M15 4h4a1 1 0 0 1 1 1v4M20 15v4a1 1 0 0 1-1 1h-4M9 20H5a1 1 0 0 1-1-1v-4"/></svg></button>
+      <span class="tool-sep"></span>
+      <button class="tool on" id="toolOverhang" title="Highlight overhangs"><svg viewBox="0 0 24 24"><path d="M4 18h16M7 18V9h10l-4 5"/></svg></button>
+    </nav>
+
+    <section class="viewport" id="viewport">
+      <div class="vp-top">
+        <div class="seg" role="tablist" aria-label="Compare">
+          <button role="tab" id="tabOriginal">Original</button>
+          <button role="tab" id="tabOptimized" class="active">Optimized</button>
+        </div>
+      </div>
+      <div class="vp-file" id="vpFile"></div>
+      <div class="vp-legend">
+        <span><i class="sw model"></i>Model</span>
+        <span><i class="sw over"></i>Overhang · needs support</span>
+      </div>
+      <div class="vp-bed" id="vpBed">Build plate 220 × 220 mm</div>
+      <div class="vp-busy" id="vpBusy" hidden><div class="spinner"></div></div>
+    </section>
+
+    <aside class="panel" id="panel">
+      <!-- analysing -->
+      <div class="panel-body" id="pAnalysing">
+        <h2>Analysing your part</h2>
+        <ul class="checklist" id="checklist">
+          <li>Reading the mesh</li>
+          <li>Finding overhangs</li>
+          <li>Testing orientations</li>
+          <li>Estimating plastic, time and energy</li>
+        </ul>
+      </div>
+
+      <!-- review -->
+      <div class="panel-body" id="pReview" hidden>
+        <div class="verdict" id="verdict"></div>
+
+        <section class="block">
+          <h3>Before and after <span class="hint">estimates</span></h3>
+          <table class="metrics" id="metrics"></table>
+        </section>
+
+        <section class="block">
+          <h3>Proposed changes</h3>
+          <div id="changes"></div>
+          <p class="lock"><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>Size and shape are never changed. Only how the part sits on the plate.</p>
+        </section>
+
+        <section class="block">
+          <h3>Why <span class="hint" id="aiTag">AI</span></h3>
+          <div id="ai" class="ai"></div>
+        </section>
+
+        <section class="block">
+          <h3>Suggested slicer settings</h3>
+          <div class="chips" id="settings"></div>
+        </section>
+      </div>
+
+      <!-- done -->
+      <div class="panel-body" id="pDone" hidden>
+        <div class="done">
+          <div class="done-icon"><svg viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg></div>
+          <h2>Ready to print</h2>
+          <p id="doneText"></p>
+          <button class="btn ghost" id="againDownload">Download again</button>
+        </div>
+      </div>
+
+      <footer class="panel-foot" id="panelFoot" hidden>
+        <button class="btn ghost" id="restartBtn">Start over</button>
+        <button class="btn primary" id="confirmBtn">Confirm &amp; download</button>
+      </footer>
+    </aside>
+  </main>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

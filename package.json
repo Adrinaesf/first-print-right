@@ -1,0 +1,14 @@
+{
+  "name": "first-print-right-recreation",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Faithful local recreation of First-Print-Right",
+  "scripts": {
+    "start": "node --env-file-if-exists=.env server.mjs",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=22.9.0"
+  }
+}
