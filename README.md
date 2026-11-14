@@ -1,4 +1,4 @@
-# First-Print-Right — STL orientation optimization
+# STL orientation optimization
 
 An STL review tool with interactive 3D previews, geometry-based orientation search, and an experimental slicer-trained regression model. Based on https://first-print-right.onrender.com/, retrieved November 13, 2026. The actual publicly served HTML, CSS, and JavaScript are preserved under `original/`. `public/` is the runnable copy, with the same Three.js version served locally rather than from a CDN. The private server's source is not exposed by the website; `server.mjs` is a newly written replacement for its two API routes.
 
