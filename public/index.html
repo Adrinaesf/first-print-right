@@ -41,7 +41,7 @@
         <p class="hero-sub"><span class="hack">UNHack 2026</span><span class="dot"></span>Team Sims<span class="dot"></span>Climate-Ready Communities</p>
       </div>
       <h1>Check a part before you print it</h1>
-      <p class="lead">Upload an STL. We find the orientation that needs the least support, show you the result in 3D, and you approve it before download.</p>
+      <p class="lead">Upload an STL. Compare orientations using geometry and ML estimates, review the result in 3D, and approve it before download.</p>
       <label class="dropzone" id="dropzone">
         <input type="file" id="fileInput" accept=".stl" hidden>
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0-4.5 4.5M12 4l4.5 4.5M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -52,6 +52,7 @@
         <button class="btn ghost" id="sampleBtn" type="button">Try a sample part</button>
         <span class="muted">Your file stays in your browser. Only the numbers are sent to the AI.</span>
       </div>
+      <p class="muted ml-status" id="mlStatus" role="status">Loading local ML model…</p>
       <p class="error" id="uploadError" hidden></p>
     </div>
   </main>
@@ -100,10 +101,18 @@
 
       <!-- review -->
       <div class="panel-body" id="pReview" hidden>
+        <section class="estimator-control">
+          <label for="estimatorSelect">Orientation scoring</label>
+          <select id="estimatorSelect">
+            <option value="auto">Use ML when validated</option>
+            <option value="heuristic">Geometry formulas</option>
+          </select>
+          <p id="estimatorNote" class="muted" role="status"></p>
+        </section>
         <div class="verdict" id="verdict"></div>
 
         <section class="block">
-          <h3>Before and after <span class="hint">estimates</span></h3>
+          <h3>Before and after <span class="hint" id="estimatorLabel">estimates</span></h3>
           <table class="metrics" id="metrics"></table>
         </section>
 

@@ -1,0 +1,207 @@
+{
+  "schemaVersion": 1,
+  "type": "ridge-log1p",
+  "features": [
+    "volumeMm3",
+    "surfaceMm2",
+    "overhangMm2",
+    "contactMm2",
+    "heightMm",
+    "supportProxyMm3",
+    "footprintMm2"
+  ],
+  "targets": [
+    "supportG",
+    "hours"
+  ],
+  "profile": {
+    "material": "PLA",
+    "layerMm": 0.2,
+    "infill": 0.15,
+    "supportDensity": 0.15,
+    "wallMm": 1.2,
+    "printerWatts": 120
+  },
+  "provenance": {
+    "kind": "slicer",
+    "description": "PrusaSlicer 2.9.7 estimates from 24 procedural calibration solids in 8 poses each. Labels are slicer estimates, not measured print outcomes; limited demonstration dataset.",
+    "slicerVersion": "PrusaSlicer-2.9.7 based on Slic3r (with GUI support)",
+    "profileFile": "scripts/slicer-profile.ini",
+    "profileSha256": "2f7bce8f2fc3d144808ca39dd0fd23e46578fec3a0ccc26757e4bd8964d7b638",
+    "generatedAt": "2026-11-14T00:26:03.923Z",
+    "labelMethod": "Normal-mode estimated duration; positive XY extrusion under Support material/Support material interface TYPE tags, converted with 1.75 mm filament and PLA density 1.24 g/cm3.",
+    "orientationDirections": [
+      [
+        0,
+        0,
+        1
+      ],
+      [
+        0,
+        0,
+        -1
+      ],
+      [
+        1,
+        0,
+        0
+      ],
+      [
+        -1,
+        0,
+        0
+      ],
+      [
+        0,
+        1,
+        0
+      ],
+      [
+        0,
+        -1,
+        0
+      ],
+      [
+        1,
+        1,
+        1
+      ],
+      [
+        1,
+        -1,
+        1
+      ]
+    ]
+  },
+  "scaling": {
+    "mean": [
+      9.396725748272967,
+      8.198366348570797,
+      2.184135085542045,
+      3.5473021088813015,
+      3.472069547764407,
+      2.8965396389476736,
+      6.821051688035022
+    ],
+    "scale": [
+      1.4193058684544357,
+      0.9155229347128966,
+      3.031592294950685,
+      3.036085191134266,
+      0.5523667555943984,
+      4.038125498008164,
+      1.0211559519291027
+    ]
+  },
+  "coefficients": {
+    "supportG": [
+      0.578343088778689,
+      -0.5546543820617775,
+      0.500002699066628,
+      -0.6664246224915629,
+      -0.29080983995294507,
+      0.16279494810147993,
+      0.9626479223794921,
+      0.17118940451030348
+    ],
+    "hours": [
+      0.6649835966125817,
+      0.12188656969961424,
+      0.1925058355484211,
+      -0.12624218378121446,
+      -0.07857500597753583,
+      0.039909654997150816,
+      0.13589016399618137,
+      0.00864263260628824
+    ]
+  },
+  "ranges": {
+    "volumeMm3": {
+      "min": 496.8000297546387,
+      "max": 110690.60872095941
+    },
+    "surfaceMm2": {
+      "min": 501.6000099182129,
+      "max": 12957.495409325486
+    },
+    "overhangMm2": {
+      "min": 0,
+      "max": 2315.4260864257812
+    },
+    "contactMm2": {
+      "min": 0,
+      "max": 2867
+    },
+    "heightMm": {
+      "min": 6,
+      "max": 77.36493607140987
+    },
+    "supportProxyMm3": {
+      "min": 0,
+      "max": 53742
+    },
+    "footprintMm2": {
+      "min": 72,
+      "max": 4988.306325798368
+    }
+  },
+  "training": {
+    "lambda": 1,
+    "rows": 160,
+    "groups": 20,
+    "holdoutRows": 32,
+    "trainModelIds": [
+      "bracket-4",
+      "bracket-5",
+      "tee-0",
+      "tee-1",
+      "tee-2",
+      "tee-3",
+      "tee-4",
+      "tee-5",
+      "box-5",
+      "box-4",
+      "box-1",
+      "box-0",
+      "box-3",
+      "box-2",
+      "taper-0",
+      "taper-1",
+      "taper-2",
+      "taper-3",
+      "taper-4",
+      "taper-5"
+    ],
+    "holdoutModelIds": [
+      "bracket-2",
+      "bracket-3",
+      "bracket-0",
+      "bracket-1"
+    ],
+    "split": "grouped-by-modelId",
+    "holdoutInRangeRows": 24
+  },
+  "metrics": {
+    "supportG": {
+      "mae": 0.41779216983859313,
+      "rmse": 0.7462113194258263,
+      "meanBaselineMae": 1.0690535724838421,
+      "meanBaselineRmse": 1.18065251979766,
+      "heuristicMae": 0.38792321359297965,
+      "heuristicRmse": 0.7094299900120583
+    },
+    "hours": {
+      "mae": 0.0792323992567506,
+      "rmse": 0.09410830832316276,
+      "meanBaselineMae": 0.6564357638888885,
+      "meanBaselineRmse": 0.7218585392180373,
+      "heuristicMae": 0.26403284819161665,
+      "heuristicRmse": 0.32918679575737325
+    }
+  },
+  "enabledTargets": [
+    "hours"
+  ],
+  "usable": true,
+  "qualityReason": "ML enabled for print time: held-out MAE is no worse than the heuristic and mean baselines. support material retains the geometry formula because its quality gate failed."
+}

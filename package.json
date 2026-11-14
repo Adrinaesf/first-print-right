@@ -3,10 +3,11 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Faithful local recreation of First-Print-Right",
+  "description": "STL orientation optimization with slicer-trained ML and interactive 3D review",
   "scripts": {
     "start": "node --env-file-if-exists=.env server.mjs",
-    "test": "node --test"
+    "test": "node --test",
+    "train:ml": "node scripts/train-model.mjs data/slicer-training.json public/ml/model.json"
   },
   "engines": {
     "node": ">=22.9.0"

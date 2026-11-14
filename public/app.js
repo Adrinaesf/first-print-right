@@ -1,4 +1,7 @@
 import * as THREE from 'three';
+import { prepare, evaluate, heuristicEstimate, candidateDirections } from './analysis.js';
+import { createPredictor, validateModel, profilesMatch, DEFAULT_PROFILE } from './ml/model.js';
+import { selectOrientation } from './ml/selection.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 import { STLExporter } from 'three/addons/exporters/STLExporter.js';
@@ -29,6 +32,8 @@ const state = {
   view: 'optimized',
   showOverhang: true,
   report: null,
+  analysis: null,
+  candidates: [],
 };
 
 const $ = (id) => document.getElementById(id);
@@ -41,6 +46,33 @@ fetch('/api/status').then(r => r.json()).then(s => {
   pill.classList.add(s.ai ? 'on' : 'off');
   pill.querySelector('span').textContent = s.ai ? `AI · ${s.model} · ${s.effort}` : 'AI off · add API key';
 }).catch(() => { $('aiPill').classList.add('off'); $('aiPill').querySelector('span').textContent = 'AI offline'; });
+
+/* ================= local regression model ================= */
+let mlModel = null, mlPredictor = null;
+const modelReady = fetch('/ml/model.json', { signal: AbortSignal.timeout(5000) })
+  .then(async response => {
+    if (!response.ok) throw new Error('Model unavailable');
+    const model = await response.json();
+    validateModel(model);
+    mlModel = model;
+    if (!profilesMatch(model.profile, DEFAULT_PROFILE)) throw new Error('Incompatible ML profile');
+    if (model.usable) mlPredictor = createPredictor(model, DEFAULT_PROFILE);
+    $('mlStatus').textContent = model.usable
+      ? `ML model ready · ${model.enabledTargets.map(key => key === 'hours' ? 'print time' : 'support material').join(' and ')} predictions run in your browser.`
+      : 'ML model did not pass validation. Geometry formulas remain active.';
+  }).catch(() => { $('mlStatus').textContent = 'ML model unavailable. Geometry formulas remain active.'; });
+
+function applyEstimator() {
+  state.analysis = selectOrientation(state.prep, state.original, state.candidates, {
+    predictor: mlPredictor, preferML: $('estimatorSelect').value === 'auto',
+  });
+  state.best = state.analysis.best;
+  state.qBest.setFromUnitVectors(state.best.u, new THREE.Vector3(0, 0, 1));
+}
+
+function estimate(p, evaluation) {
+  return state.analysis?.estimates.get(evaluation) ?? heuristicEstimate(p, evaluation);
+}
 
 /* ================= viewer ================= */
 let renderer, scene, camera, controls, meshOriginal, meshOptimized;
@@ -312,137 +344,12 @@ function animateCamera(toPos, toTarget) {
   camAnim = requestAnimationFrame(step);
 }
 
-/* ================= geometry analysis ================= */
-function prepare(geometry) {
-  let g = geometry.index ? geometry.toNonIndexed() : geometry;
-  g.deleteAttribute('normal');
-  g.deleteAttribute('uv');
-  g.computeBoundingBox();
-  // centre the raw model at the origin so rotations are about its middle
-  const ctr = g.boundingBox.getCenter(new THREE.Vector3());
-  g.translate(-ctr.x, -ctr.y, -ctr.z);
-
-  const pos = g.attributes.position.array;
-  const T = pos.length / 9;
-  const normals = new Float32Array(T * 3), areas = new Float32Array(T);
-  let volume = 0, surface = 0;
-  for (let t = 0; t < T; t++) {
-    const i = t * 9;
-    const ax = pos[i], ay = pos[i + 1], az = pos[i + 2];
-    const bx = pos[i + 3], by = pos[i + 4], bz = pos[i + 5];
-    const cx = pos[i + 6], cy = pos[i + 7], cz = pos[i + 8];
-    const ux = bx - ax, uy = by - ay, uz = bz - az, vx = cx - ax, vy = cy - ay, vz = cz - az;
-    let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
-    const len = Math.hypot(nx, ny, nz);
-    areas[t] = len / 2;
-    surface += len / 2;
-    if (len > 0) { nx /= len; ny /= len; nz /= len; }
-    normals.set([nx, ny, nz], t * 3);
-    volume += (ax * (by * cz - bz * cy) - ay * (bx * cz - bz * cx) + az * (bx * cy - by * cx)) / 6;
-  }
-  g.computeBoundingBox();
-  return { geometry: g, pos, normals, areas, T, volume: Math.abs(volume), surface, size: g.boundingBox.getSize(new THREE.Vector3()) };
-}
-
-/** Evaluate printing with world-up = direction `u` (unit vector in model space). */
-function evaluate(p, u) {
-  const { pos, normals, areas, T } = p;
-  const ux = u.x, uy = u.y, uz = u.z;
-  // two axes perpendicular to u for the footprint
-  const e1 = new THREE.Vector3().crossVectors(u, Math.abs(u.z) < 0.9 ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(1, 0, 0)).normalize();
-  const e2 = new THREE.Vector3().crossVectors(u, e1);
-
-  let minZ = Infinity, maxZ = -Infinity, min1 = Infinity, max1 = -Infinity, min2 = Infinity, max2 = -Infinity;
-  const n = pos.length / 3;
-  for (let v = 0; v < n; v++) {
-    const x = pos[v * 3], y = pos[v * 3 + 1], z = pos[v * 3 + 2];
-    const h = x * ux + y * uy + z * uz;
-    if (h < minZ) minZ = h; if (h > maxZ) maxZ = h;
-    const a = x * e1.x + y * e1.y + z * e1.z, b = x * e2.x + y * e2.y + z * e2.z;
-    if (a < min1) min1 = a; if (a > max1) max1 = a;
-    if (b < min2) min2 = b; if (b > max2) max2 = b;
-  }
-
-  let overhang = 0, supportVol = 0, contact = 0;
-  for (let t = 0; t < T; t++) {
-    const nz = normals[t * 3] * ux + normals[t * 3 + 1] * uy + normals[t * 3 + 2] * uz;
-    if (nz >= -COS_OVER) continue;
-    const i = t * 9;
-    const z0 = pos[i] * ux + pos[i + 1] * uy + pos[i + 2] * uz - minZ;
-    const z1 = pos[i + 3] * ux + pos[i + 4] * uy + pos[i + 5] * uz - minZ;
-    const z2 = pos[i + 6] * ux + pos[i + 7] * uy + pos[i + 8] * uz - minZ;
-    if (Math.max(z0, z1, z2) < 0.3) { if (nz < -0.95) contact += areas[t]; continue; }
-    overhang += areas[t];
-    supportVol += areas[t] * -nz * ((z0 + z1 + z2) / 3);
-  }
-
-  const height = maxZ - minZ, fx = max1 - min1, fy = max2 - min2;
-  const fits = height <= BED.z && ((fx <= BED.x && fy <= BED.y) || (fx <= BED.y && fy <= BED.x));
-  return { u: u.clone(), height, footprint: [fx, fy], overhang, supportVol, contact, fits };
-}
-
-function estimate(p, e) {
-  const shell = Math.min(p.volume, p.surface * WALL_MM);
-  const partMm3 = shell + INFILL * (p.volume - shell);
-  const supportMm3 = e.supportVol * SUPPORT_DENSITY;
-  const grams = (mm3) => (mm3 / 1000) * PLA_DENSITY;
-  const seconds = (partMm3 + supportMm3) / FLOW_MM3_S + (e.height / LAYER_MM) * LAYER_OVERHEAD_S;
-  const hours = seconds / 3600;
-
-  let risk = 0;
-  const overRatio = e.overhang / Math.max(p.surface, 1);
-  if (overRatio > 0.15) risk += 2; else if (overRatio > 0.04) risk += 1;
-  if (e.overhang > 5000) risk += 1;                 // > 50 cm² printed over support
-  if (e.contact < 20) risk += 1;
-  if (e.contact < 20 && e.height > 15) risk += 1;
-  if (e.height / Math.sqrt(Math.max(e.contact, 1)) > 8) risk += 1;
-  if (!e.fits) risk += 3;
-  const riskLabel = risk >= 3 ? 'High' : risk >= 2 ? 'Medium' : 'Low';
-
-  return {
-    supportG: grams(supportMm3), partG: grams(partMm3), totalG: grams(partMm3 + supportMm3),
-    hours, kwh: hours * PRINTER_WATTS / 1000,
-    overhangCm2: e.overhang / 100, contactCm2: e.contact / 100, heightMm: e.height,
-    risk: riskLabel, fits: e.fits,
-  };
-}
-
-function score(p, e) {
-  const est = estimate(p, e);
-  let s = est.supportG * 3 + est.hours * 6;          // waste weighted above time
-  if (est.contactCm2 < 2) s += 3 * (2 - est.contactCm2); // little to hold it down
-  if (e.height / Math.sqrt(Math.max(e.contact, 1)) > 8) s += 4; // tall and narrow
-  if (!e.fits) s += 1e6;
-  return s;
-}
-
-function candidateDirections(p) {
-  const dirs = [];
-  const add = (x, y, z) => { const v = new THREE.Vector3(x, y, z); if (v.lengthSq() > 0) dirs.push(v.normalize()); };
-  for (const x of [-1, 0, 1]) for (const y of [-1, 0, 1]) for (const z of [-1, 0, 1]) add(x, y, z);
-  // even spread over the sphere
-  const N = 240, golden = Math.PI * (3 - Math.sqrt(5));
-  for (let i = 0; i < N; i++) {
-    const y = 1 - (i / (N - 1)) * 2, r = Math.sqrt(1 - y * y), th = golden * i;
-    add(Math.cos(th) * r, y, Math.sin(th) * r);
-  }
-  // largest flat faces placed face-down on the plate
-  const groups = new Map();
-  for (let t = 0; t < p.T; t++) {
-    const key = [0, 1, 2].map(k => Math.round(p.normals[t * 3 + k] * 50)).join(',');
-    const gr = groups.get(key) || { a: 0, n: new THREE.Vector3() };
-    gr.a += p.areas[t];
-    gr.n.x += p.normals[t * 3] * p.areas[t]; gr.n.y += p.normals[t * 3 + 1] * p.areas[t]; gr.n.z += p.normals[t * 3 + 2] * p.areas[t];
-    groups.set(key, gr);
-  }
-  [...groups.values()].sort((a, b) => b.a - a.a).slice(0, 24).forEach(gr => add(-gr.n.x, -gr.n.y, -gr.n.z));
-  return dirs;
-}
-
 /* ================= workflow ================= */
 const tick = () => new Promise(r => setTimeout(r, 260));
 
 async function runAnalysis(geometry, name) {
+  await modelReady;
+  state.analysis = null;
   showWorkspace();
   state.name = name;
   $('pAnalysing').hidden = false; $('pReview').hidden = true; $('pDone').hidden = true; $('panelFoot').hidden = true;
@@ -468,18 +375,12 @@ async function runAnalysis(geometry, name) {
 
   mark(2); await tick();
   const dirs = candidateDirections(p);
-  let best = state.original, bestScore = score(p, best);
-  const origScore = bestScore;
+  state.candidates = [];
   for (let i = 0; i < dirs.length; i++) {
-    const e = evaluate(p, dirs[i]);
-    const sc = score(p, e);
-    if (sc < bestScore) { best = e; bestScore = sc; }
+    state.candidates.push(evaluate(p, dirs[i]));
     if (i % 40 === 39) await new Promise(r => setTimeout(r));
   }
-  // keep the original pose unless the gain is meaningful (> 5 %)
-  if (best !== state.original && bestScore > origScore * 0.95 && state.original.fits) best = state.original;
-  state.best = best;
-  state.qBest.setFromUnitVectors(best.u, up);
+  applyEstimator();
   state.tested = dirs.length;
 
   mark(3); await tick();
@@ -501,6 +402,11 @@ function renderReview() {
   const before = estimate(p, state.original);
   const after = estimate(p, chosenEval());
   const isChange = changed() && state.applyRotation;
+  const usingML = state.analysis.mode === 'ml';
+  const mlSupport = usingML && state.analysis.targets.includes('supportG');
+  const mlTime = usingML && state.analysis.targets.includes('hours');
+  $('estimatorLabel').textContent = usingML ? 'ML + formulas' : 'formula estimates';
+  $('estimatorNote').textContent = state.analysis.reason + (usingML ? ' Experimental: trained on generated parts sliced with a fixed PLA profile, not real print outcomes.' : ' Failure risk is a heuristic, not a measured probability.');
 
   // verdict
   const savedG = before.totalG - after.totalG;
@@ -508,10 +414,10 @@ function renderReview() {
   if (isChange && savedG > 0.05) {
     const pct = Math.round((before.supportG - after.supportG) / Math.max(before.supportG, 0.01) * 100);
     v.className = 'verdict';
-    v.innerHTML = `<div class="big">−${fmtG(savedG)}</div><div><strong>Less plastic, ${before.risk === after.risk ? 'same risk' : 'lower failure risk'}</strong><p>Support material down about ${pct}%. Print time down about ${fmtTime(before.hours - after.hours)}.</p></div>`;
+    v.innerHTML = `<div class="big">−${fmtG(savedG)}</div><div><strong>Less plastic, ${before.risk === after.risk ? 'same risk' : (before.risk === 'Low' || (before.risk === 'Medium' && after.risk === 'High') ? 'higher failure risk' : 'lower failure risk')}</strong><p>Support material down about ${pct}%. Estimated print time ${fmtTime(before.hours)} → ${fmtTime(after.hours)}.</p></div>`;
   } else if (isChange) {
     v.className = 'verdict';
-    v.innerHTML = `<div class="big">✓</div><div><strong>Steadier on the plate</strong><p>A safer orientation with similar material use.</p></div>`;
+    v.innerHTML = `<div class="big">✓</div><div><strong>Orientation updated</strong><p>Selected using support, time, and stability scores. Review the estimates below.</p></div>`;
   } else {
     v.className = 'verdict neutral';
     v.innerHTML = `<div class="big">✓</div><div><strong>${changed() ? 'Original orientation kept' : 'Already well oriented'}</strong><p>${changed() ? 'You turned off the rotation.' : `We tested ${state.tested} orientations and none was meaningfully better.`}</p></div>`;
@@ -525,10 +431,10 @@ function renderReview() {
   };
   $('metrics').innerHTML =
     `<tr><th>&nbsp;</th><th>Before</th><th>After</th><th>Change</th></tr>` +
-    `<tr><td>Failure risk</td><td><span class="risk ${before.risk}">${before.risk}</span></td><td class="after"><span class="risk ${after.risk}">${after.risk}</span></td><td class="delta">—</td></tr>` +
-    row('Support material', before.supportG, after.supportG, fmtG) +
+    `<tr><td>Failure risk · heuristic</td><td><span class="risk ${before.risk}">${before.risk}</span></td><td class="after"><span class="risk ${after.risk}">${after.risk}</span></td><td class="delta">—</td></tr>` +
+    row(mlSupport ? 'Support · ML' : 'Support material', before.supportG, after.supportG, fmtG) +
     row('Total plastic', before.totalG, after.totalG, fmtG) +
-    row('Print time', before.hours, after.hours, fmtTime) +
+    row(mlTime ? 'Print time · ML' : 'Print time', before.hours, after.hours, fmtTime) +
     row('Electricity', before.kwh, after.kwh, (x) => x.toFixed(2) + ' kWh') +
     row('Overhang area', before.overhangCm2, after.overhangCm2, (x) => x.toFixed(1) + ' cm²') +
     row('Bed contact', before.contactCm2, after.contactCm2, (x) => x.toFixed(1) + ' cm²', false);
@@ -547,23 +453,27 @@ function renderReview() {
 
   // settings
   const supportsOn = after.overhangCm2 > 0.5;
-  const brim = after.contactCm2 < 3 || after.heightMm / Math.sqrt(Math.max(after.contactCm2 * 100, 1)) > 5;
+  const brim = !usingML && (after.contactCm2 < 3 || after.heightMm / Math.sqrt(Math.max(after.contactCm2 * 100, 1)) > 5);
   $('settings').innerHTML = [
-    `Supports <b>${supportsOn ? 'On · tree' : 'Off'}</b>`,
+    `Supports <b>${usingML ? 'Auto · grid' : supportsOn ? 'On · tree' : 'Off'}</b>`,
     `Brim <b>${brim ? 'On · 5 mm' : 'Off'}</b>`,
     `Layer <b>${LAYER_MM} mm</b>`,
     `Infill <b>${Math.round(INFILL * 100)}%</b>`,
     `Material <b>PLA</b>`,
+    ...(usingML ? ['Profile <b>fixed calibration</b>'] : []),
   ].map(t => `<span class="chip">${t}</span>`).join('');
 
   state.report = {
     file: state.name,
+    estimator: state.analysis.mode,
+    model_version: usingML ? mlModel.schemaVersion : null,
+    ml_targets: state.analysis.targets,
     size_mm: [p.size.x, p.size.y, p.size.z].map(r1),
     orientations_tested: state.tested,
     rotation_applied: isChange,
     rotation: describeRotation(),
     before: round(before), after: round(after),
-    suggested_settings: { supports: supportsOn ? 'tree' : 'off', brim, layer_mm: LAYER_MM, infill: INFILL, material: 'PLA' },
+    suggested_settings: { supports: usingML ? 'auto-grid' : supportsOn ? 'tree' : 'off', brim, layer_mm: LAYER_MM, infill: INFILL, material: 'PLA' },
     assumptions: `PLA ${PLA_DENSITY} g/cm³, ${WALL_MM} mm walls, ${INFILL * 100}% infill, ${SUPPORT_DENSITY * 100}% support density, ${FLOW_MM3_S} mm³/s average, ${PRINTER_WATTS} W printer, overhang limit ${OVERHANG_DEG}°`,
   };
   requestExplanation();
@@ -609,15 +519,15 @@ function renderAI(d, note = '') {
 function localExplanation() {
   const r = state.report;
   if (!r.rotation_applied) return {
-    headline: 'This part already sits well on the plate.',
-    reasons: [`Overhang area is about ${r.after.overhangCm2} cm².`, `Bed contact is about ${r.after.contactCm2} cm².`],
+    headline: 'No rotation is applied.',
+    reasons: [`Overhang area is about ${r.after.overhangCm2.toFixed(1)} cm².`, `Bed contact is about ${r.after.contactCm2.toFixed(1)} cm².`],
     tips: [],
   };
   return {
-    headline: `Turning the part saves about ${fmtG(r.before.totalG - r.after.totalG)} of plastic.`,
+    headline: 'Review the support, time, and stability trade-offs below.',
     reasons: [
-      `Overhangs drop from about ${r.before.overhangCm2} to ${r.after.overhangCm2} cm², so less support is printed and thrown away.`,
-      `Bed contact goes from about ${r.before.contactCm2} to ${r.after.contactCm2} cm², which helps the first layer hold.`,
+      `Estimated support changes from ${fmtG(r.before.supportG)} to ${fmtG(r.after.supportG)}.`,
+      `Bed contact changes from ${r.before.contactCm2.toFixed(1)} to ${r.after.contactCm2.toFixed(1)} cm².`,
       `Estimated print time changes from ${fmtTime(r.before.hours)} to ${fmtTime(r.after.hours)}.`,
     ],
     tips: [],
@@ -644,7 +554,7 @@ function confirmAndDownload() {
   const before = estimate(state.prep, state.original), after = estimate(state.prep, chosenEval());
   const saved = before.totalG - after.totalG;
   $('doneText').innerHTML = `<b>${escapeHtml(file)}</b> is downloading.` +
-    (saved > 0.05 ? `<br>This print should use about <b>${fmtG(saved)}</b> less plastic and <b>${fmtTime(before.hours - after.hours)}</b> less time.` : '<br>Open it in your slicer and print.');
+    (saved > 0.05 ? `<br>This print should use about <b>${fmtG(saved)}</b> less plastic.<br>Estimated print time: <b>${fmtTime(before.hours)} → ${fmtTime(after.hours)}</b>.` : '<br>Open it in your slicer and print.');
   $('pReview').hidden = true; $('pDone').hidden = false;
   $('confirmBtn').hidden = true;
   $('restartBtn').textContent = 'Check another part';
@@ -712,6 +622,14 @@ dz.addEventListener('drop', (e) => handleFile(e.dataTransfer.files[0]));
 window.addEventListener('dragover', (e) => e.preventDefault());
 window.addEventListener('drop', (e) => e.preventDefault());
 
+$('estimatorSelect').addEventListener('change', () => {
+  if (!state.analysis) return;
+  state.applyRotation = true;
+  applyEstimator();
+  showMeshes();
+  presetView('iso');
+  renderReview();
+});
 $('sampleBtn').addEventListener('click', () => runAnalysis(sampleGeometry(), 'stove-knob-sample.stl'));
 $('tabOriginal').addEventListener('click', () => setView('original'));
 $('tabOptimized').addEventListener('click', () => setView('optimized'));
@@ -735,5 +653,5 @@ $('restartBtn').addEventListener('click', restart);
 function fmtG(g) { return g >= 100 ? `${Math.round(g)} g` : `${g.toFixed(1)} g`; }
 function fmtTime(h) { const m = Math.max(0, Math.round(h * 60)); return m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} m` : `${m} min`; }
 function r1(x) { return Math.round(x * 10) / 10; }
-function round(o) { const out = {}; for (const [k, v] of Object.entries(o)) out[k] = typeof v === 'number' ? Math.round(v * 100) / 100 : v; return out; }
+function round(o) { const out = {}; for (const [k, v] of Object.entries(o)) out[k] = typeof v === 'number' ? Math.round(v * 1e6) / 1e6 : v; return out; }
 function escapeHtml(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }

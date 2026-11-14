@@ -340,3 +340,10 @@ svg { display: block; }
   .hero-sub { opacity: 1; transform: none; animation: none; }
   .hero-sub .hack { animation: none; }
 }
+
+/* Estimator choice and provenance */
+.ml-status { margin-top: 16px; }
+.estimator-control { margin-bottom: 18px; }
+.estimator-control label { display: block; font-weight: 600; margin-bottom: 6px; }
+.estimator-control select { width: 100%; padding: 9px; background: var(--panel-2); color: var(--text); border: 1px solid var(--line); border-radius: 8px; font: inherit; }
+.estimator-control p { margin-top: 8px; line-height: 1.5; }
